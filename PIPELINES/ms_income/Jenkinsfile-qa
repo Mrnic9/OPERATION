@@ -1,0 +1,75 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'gestion-income-qa'
+        IMAGE_TAG = 'latest'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                echo 'Building Spring Boot Income Service QA...'
+                dir('Back/ms_income') {
+                    sh 'chmod +x ./mvnw'
+                    sh './mvnw clean package -DskipTests'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker image...'
+                dir('Back/ms_income') {
+                    sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
+                }
+            }
+        }
+
+        stage('Deploy Application') {
+            steps {
+                echo 'Deploying Income Service QA...'
+                sh '''
+                    docker network create gestios-gastos-back-qa || true
+                    
+                    docker stop msincome-qa || true
+                    docker rm msincome-qa || true
+
+                    docker run -d \
+                      --name msincome-qa \
+                      --network gestios-gastos-back-qa \
+                      -p 8101:8100 \
+                      -e SPRING_PROFILES_ACTIVE=qa \
+                      -e SPRING_DATASOURCE_URL="jdbc:postgresql://DataBase-qa:5432/gestion_gastos_qa" \
+                      -e SPRING_DATASOURCE_USERNAME=postgres \
+                      -e SPRING_DATASOURCE_PASSWORD=qa123456 \
+                      -e CATEGORIES_SERVICE_URL=http://mscategories-qa:8090 \
+                      ${IMAGE_NAME}:${IMAGE_TAG}
+                    
+                    sleep 10
+                    if docker ps | grep msincome-qa; then
+                        echo "✅ Income Service QA running on port 8101"
+                    else
+                        echo "❌ Failed to start Income Service QA"
+                        docker logs msincome-qa || true
+                        exit 1
+                    fi
+
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '✅ Pipeline completed'
+        }
+    }
+}
