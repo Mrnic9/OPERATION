@@ -1,0 +1,42 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+            }
+        }
+
+        stage('Deploy Database') {
+            steps {
+                echo 'Deploying PostgreSQL QA...'
+                sh '''
+                    docker network create gestios-gastos-back-qa || true
+                    
+                    docker stop DataBase-qa || true
+                    docker rm DataBase-qa || true
+
+                    docker run -d \
+                      --name DataBase-qa \
+                      --network gestios-gastos-back-qa \
+                      -p 5433:5432 \
+                      -e POSTGRES_DB=gestion_gastos_qa \
+                      -e POSTGRES_USER=postgres \
+                      -e POSTGRES_PASSWORD=qa123456 \
+                      postgres:15
+                    
+                    sleep 10
+                    echo "✅ Database QA deployed on port 5433"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '✅ Pipeline completed'
+        }
+    }
+}

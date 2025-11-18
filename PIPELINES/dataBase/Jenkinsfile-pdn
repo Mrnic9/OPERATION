@@ -1,0 +1,42 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+            }
+        }
+
+        stage('Deploy Database') {
+            steps {
+                echo 'Deploying PostgreSQL PRODUCTION...'
+                sh '''
+                    docker network create gestios-gastos-back-pdn || true
+                    
+                    docker stop DataBase-pdn || true
+                    docker rm DataBase-pdn || true
+
+                    docker run -d \
+                      --name DataBase-pdn \
+                      --network gestios-gastos-back-pdn \
+                      -p 5434:5432 \
+                      -e POSTGRES_DB=gestion_gastos_pdn \
+                      -e POSTGRES_USER=postgres \
+                      -e POSTGRES_PASSWORD=pdn123456 \
+                      postgres:15
+                    
+                    sleep 10
+                    echo "✅ Database PRODUCTION deployed on port 5434"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '✅ Pipeline completed'
+        }
+    }
+}

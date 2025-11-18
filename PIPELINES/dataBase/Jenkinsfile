@@ -1,0 +1,44 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+            }
+        }
+
+        stage('Deploy Database') {
+            steps {
+                echo 'Deploying PostgreSQL DEV...'
+                sh '''
+                    echo "🚀 Desplegando PostgreSQL DEV..."
+                    
+                    docker network create gestios-gastos-back-dev || true
+                    
+                    docker stop DataBase-dev || true
+                    docker rm DataBase-dev || true
+                    
+                    docker run -d \
+                      --name DataBase-dev \
+                      --network gestios-gastos-back-dev \
+                      -p 5432:5432 \
+                      -e POSTGRES_DB=gestion_gastos_dev \
+                      -e POSTGRES_USER=postgres \
+                      -e POSTGRES_PASSWORD=dev123456 \
+                      postgres:15
+                    
+                    sleep 10
+                    echo "✅ Database deployed successfully"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline completed'
+        }
+    }
+}
