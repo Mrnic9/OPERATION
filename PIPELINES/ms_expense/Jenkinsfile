@@ -1,0 +1,75 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'gestion-expense-dev'
+        IMAGE_TAG = 'latest'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                echo 'Building Spring Boot Expense Service...'
+                dir('Back/ms_expense/ms_expense') {
+                    sh 'chmod +x ./mvnw'
+                    sh './mvnw clean package -DskipTests'
+                }
+            }
+        }
+
+
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker image...'
+                dir('Back/ms_expense') {
+                    sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
+                }
+            }
+        }
+
+        stage('Deploy Application') {
+            steps {
+                echo 'Deploying Expense Service...'
+                sh '''
+                    docker network create gestios-gastos-back-dev || true
+                    
+                    docker stop msexpense-dev || true
+                    docker rm msexpense-dev || true
+
+                    docker run -d \
+                      --name msexpense-dev \
+                      --network gestios-gastos-back-dev \
+                      -p 8082:8080 \
+                      -e SPRING_PROFILES_ACTIVE=dev \
+                      -e SPRING_DATASOURCE_URL="jdbc:postgresql://DataBase-dev:5432/gestion_gastos_dev" \
+                      -e SPRING_DATASOURCE_USERNAME=postgres \
+                      -e SPRING_DATASOURCE_PASSWORD=dev123456 \
+                      -e CATEGORIES_SERVICE_URL=http://mscategories-dev:8090 \
+                      ${IMAGE_NAME}:${IMAGE_TAG}
+                    
+                    sleep 10
+                    if docker ps | grep msexpense-dev; then
+                        echo "✅ Expense Service running on port 8082"
+                    else
+                        echo "❌ Failed to start Expense Service"
+                        docker logs msexpense-dev || true
+                        exit 1
+                    fi
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '✅ Pipeline completed'
+        }
+    }
+}

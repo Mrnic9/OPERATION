@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'gestion-expense-qa'
+        IMAGE_TAG = 'latest'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                echo 'Building Spring Boot Expense Service QA...'
+                dir('Back/ms_expense/ms_expense') {
+                    sh 'chmod +x ./mvnw'
+                    sh './mvnw clean package -DskipTests'
+                }
+            }
+        }
+
+        stage('Copy JAR to Dockerfile location') {
+            steps {
+                echo 'Copying JAR to Dockerfile location...'
+                sh '''
+                    mkdir -p ./Back/ms_expense/target
+                    cp ./Back/ms_expense/ms_expense/target/*.jar ./Back/ms_expense/target/
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker image...'
+                dir('Back/ms_expense') {
+                    sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
+                }
+            }
+        }
+
+        stage('Deploy Application') {
+            steps {
+                echo 'Deploying Expense Service QA...'
+                sh '''
+                    docker network create gestios-gastos-back-qa || true
+                    
+                    docker stop msexpense-qa || true
+                    docker rm msexpense-qa || true
+
+                    docker run -d \
+                      --name msexpense-qa \
+                      --network gestios-gastos-back-qa \
+                      -p 8081:8080 \
+                      -e SPRING_PROFILES_ACTIVE=qa \
+                      -e SPRING_DATASOURCE_URL="jdbc:postgresql://DataBase-qa:5432/gestion_gastos_qa" \
+                      -e SPRING_DATASOURCE_USERNAME=postgres \
+                      -e SPRING_DATASOURCE_PASSWORD=qa123456 \
+                      -e CATEGORIES_SERVICE_URL=http://mscategories-qa:8090 \
+                      ${IMAGE_NAME}:${IMAGE_TAG}
+                    
+                    sleep 10
+                    if docker ps | grep msexpense-qa; then
+                        echo "✅ Expense Service QA running on port 8081"
+                    else
+                        echo "❌ Failed to start Expense Service QA"
+                        docker logs msexpense-qa || true
+                        exit 1
+                    fi
+
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '✅ Pipeline completed'
+        }
+    }
+}
